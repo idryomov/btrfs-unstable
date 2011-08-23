@@ -2966,6 +2966,49 @@ static long btrfs_ioctl_restripe_ctl(struct btrfs_root *root,
 	return -EINVAL;
 }
 
+static long btrfs_ioctl_restripe_progress(struct btrfs_root *root,
+					  void __user *arg)
+{
+	struct btrfs_fs_info *fs_info = root->fs_info;
+	struct btrfs_ioctl_restripe_args *rargs;
+	struct restripe_control *rctl;
+	int ret = 0;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	mutex_lock(&fs_info->restripe_mutex);
+	if (!(rctl = fs_info->restripe_ctl)) {
+		ret = -ENOTCONN;
+		goto out;
+	}
+
+	rargs = kzalloc(sizeof(*rargs), GFP_NOFS);
+	if (!rargs) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	rargs->flags = rctl->flags;
+	rargs->state = fs_info->restripe_state;
+
+	memcpy(&rargs->data, &rctl->data, sizeof(rargs->data));
+	memcpy(&rargs->sys, &rctl->sys, sizeof(rargs->sys));
+	memcpy(&rargs->meta, &rctl->meta, sizeof(rargs->meta));
+
+	spin_lock(&fs_info->restripe_lock);
+	memcpy(&rargs->stat, &rctl->stat, sizeof(rargs->stat));
+	spin_unlock(&fs_info->restripe_lock);
+
+	if (copy_to_user(arg, rargs, sizeof(*rargs)))
+		ret = -EFAULT;
+
+	kfree(rargs);
+out:
+	mutex_unlock(&fs_info->restripe_mutex);
+	return ret;
+}
+
 long btrfs_ioctl(struct file *file, unsigned int
 		cmd, unsigned long arg)
 {
@@ -3042,6 +3085,8 @@ long btrfs_ioctl(struct file *file, unsigned int
 		return btrfs_ioctl_restripe(root, argp);
 	case BTRFS_IOC_RESTRIPE_CTL:
 		return btrfs_ioctl_restripe_ctl(root, arg);
+	case BTRFS_IOC_RESTRIPE_PROGRESS:
+		return btrfs_ioctl_restripe_progress(root, argp);
 	}
 
 	return -ENOTTY;

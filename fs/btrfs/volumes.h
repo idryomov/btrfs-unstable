@@ -207,6 +207,7 @@ struct map_lookup {
 #define RESTRIPE_PAUSE_REQ	2
 
 struct btrfs_restripe_args;
+struct btrfs_restripe_progress;
 struct restripe_control {
 	struct btrfs_fs_info *fs_info;
 	u64 flags;
@@ -214,6 +215,8 @@ struct restripe_control {
 	struct btrfs_restripe_args data;
 	struct btrfs_restripe_args sys;
 	struct btrfs_restripe_args meta;
+
+	struct btrfs_restripe_progress stat;
 };
 
 int btrfs_account_dev_extents_size(struct btrfs_device *device, u64 start,

@@ -2187,8 +2187,10 @@ static void set_restripe_control(struct restripe_control *rctl, int update)
 
 	spin_lock(&fs_info->restripe_lock);
 	fs_info->restripe_ctl = rctl;
-	if (update)
+	if (update) {
 		update_restripe_args(rctl);
+		memset(&rctl->stat, 0, sizeof(rctl->stat));
+	}
 	spin_unlock(&fs_info->restripe_lock);
 }
 
@@ -2419,6 +2421,7 @@ static int __btrfs_restripe(struct btrfs_root *dev_root)
 	int slot;
 	int ret;
 	int enospc_errors = 0;
+	bool counting_only = true;
 
 	/* step one make some room on all the devices */
 	devices = &dev_root->fs_info->fs_devices->devices;
@@ -2451,12 +2454,14 @@ static int __btrfs_restripe(struct btrfs_root *dev_root)
 		goto error;
 	}
 
+again:
 	key.objectid = BTRFS_FIRST_CHUNK_TREE_OBJECTID;
 	key.offset = (u64)-1;
 	key.type = BTRFS_CHUNK_ITEM_KEY;
 
 	while (1) {
 		struct btrfs_fs_info *fs_info = dev_root->fs_info;
+		struct restripe_control *rctl = fs_info->restripe_ctl;
 
 		if (test_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state) ||
 		    test_bit(RESTRIPE_PAUSE_REQ, &fs_info->restripe_state)) {
@@ -2493,23 +2498,46 @@ static int __btrfs_restripe(struct btrfs_root *dev_root)
 
 		chunk = btrfs_item_ptr(leaf, slot, struct btrfs_chunk);
 
-		if (!should_restripe_chunk(chunk_root, leaf, chunk,
-					   found_key.offset)) {
-			btrfs_release_path(path);
+		if (!counting_only) {
+			spin_lock(&fs_info->restripe_lock);
+			rctl->stat.considered++;
+			spin_unlock(&fs_info->restripe_lock);
+		}
+
+		ret = should_restripe_chunk(chunk_root, leaf, chunk,
+					    found_key.offset);
+		btrfs_release_path(path);
+		if (!ret)
+			goto loop;
+
+		if (counting_only) {
+			spin_lock(&fs_info->restripe_lock);
+			rctl->stat.expected++;
+			spin_unlock(&fs_info->restripe_lock);
 			goto loop;
 		}
 
-		btrfs_release_path(path);
 		ret = btrfs_relocate_chunk(chunk_root,
 					   chunk_root->root_key.objectid,
 					   found_key.objectid,
 					   found_key.offset);
 		if (ret && ret != -ENOSPC)
 			goto error;
-		if (ret == -ENOSPC)
+		if (ret == -ENOSPC) {
 			enospc_errors++;
+		} else {
+			spin_lock(&fs_info->restripe_lock);
+			rctl->stat.completed++;
+			spin_unlock(&fs_info->restripe_lock);
+		}
 loop:
 		key.offset = found_key.offset - 1;
+	}
+
+	if (counting_only) {
+		btrfs_release_path(path);
+		counting_only = false;
+		goto again;
 	}
 
 error:
