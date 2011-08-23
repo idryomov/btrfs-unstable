@@ -2193,6 +2193,33 @@ static int chunk_profiles_filter(u64 chunk_profile,
 	return 1;
 }
 
+static u64 div_factor_fine(u64 num, int factor)
+{
+	if (factor == 100)
+		return num;
+	num *= factor;
+	do_div(num, 100);
+	return num;
+}
+
+static int chunk_usage_filter(struct btrfs_fs_info *fs_info, u64 chunk_offset,
+			      struct btrfs_restripe_args *rargs)
+{
+	struct btrfs_block_group_cache *cache;
+	u64 chunk_used, user_thresh;
+	int ret = 1;
+
+	cache = btrfs_lookup_block_group(fs_info, chunk_offset);
+	chunk_used = btrfs_block_group_used(&cache->item);
+
+	user_thresh = div_factor_fine(cache->key.offset, rargs->usage);
+	if (chunk_used < user_thresh)
+		ret = 0;
+
+	btrfs_put_block_group(cache);
+	return ret;
+}
+
 static int chunk_soft_convert_filter(u64 chunk_profile,
 				     struct btrfs_restripe_args *rargs)
 {
@@ -2233,6 +2260,12 @@ static int should_restripe_chunk(struct btrfs_root *root,
 	/* profiles filter */
 	if ((rargs->flags & BTRFS_RESTRIPE_ARGS_PROFILES) &&
 	    chunk_profiles_filter(chunk_type, rargs)) {
+		return 0;
+	}
+
+	/* usage filter */
+	if ((rargs->flags & BTRFS_RESTRIPE_ARGS_USAGE) &&
+	    chunk_usage_filter(rctl->fs_info, chunk_offset, rargs)) {
 		return 0;
 	}
 
