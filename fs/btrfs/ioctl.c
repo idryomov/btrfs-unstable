@@ -2899,7 +2899,7 @@ static long btrfs_ioctl_restripe(struct btrfs_root *root, void __user *arg)
 	memcpy(&rctl->meta, &rargs->meta, sizeof(rctl->meta));
 	memcpy(&rctl->sys, &rargs->sys, sizeof(rctl->sys));
 
-	ret = btrfs_restripe(rctl);
+	ret = btrfs_restripe(rctl, 0);
 
 	/* rctl freed in unset_restripe_control */
 	kfree(rargs);
