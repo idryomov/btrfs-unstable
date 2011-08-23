@@ -2968,6 +2968,34 @@ u64 btrfs_reduce_alloc_profile(struct btrfs_root *root, u64 flags)
 	u64 num_devices = root->fs_info->fs_devices->rw_devices +
 		root->fs_info->fs_devices->missing_devices;
 
+	/* pick restriper's target profile if it's available */
+	spin_lock(&root->fs_info->restripe_lock);
+	if (root->fs_info->restripe_ctl) {
+		struct restripe_control *rctl = root->fs_info->restripe_ctl;
+		u64 t = 0;
+
+		if ((flags & BTRFS_BLOCK_GROUP_DATA) &&
+		    (rctl->data.flags & BTRFS_RESTRIPE_ARGS_CONVERT) &&
+		    (flags & rctl->data.target)) {
+			t = BTRFS_BLOCK_GROUP_DATA | rctl->data.target;
+		} else if ((flags & BTRFS_BLOCK_GROUP_SYSTEM) &&
+			   (rctl->sys.flags & BTRFS_RESTRIPE_ARGS_CONVERT) &&
+			   (flags & rctl->sys.target)) {
+			t = BTRFS_BLOCK_GROUP_SYSTEM | rctl->sys.target;
+		} else if ((flags & BTRFS_BLOCK_GROUP_METADATA) &&
+			   (rctl->meta.flags & BTRFS_RESTRIPE_ARGS_CONVERT) &&
+			   (flags & rctl->meta.target)) {
+			t = BTRFS_BLOCK_GROUP_METADATA | rctl->meta.target;
+		}
+
+		if (t) {
+			spin_unlock(&root->fs_info->restripe_lock);
+			t &= ~BTRFS_AVAIL_ALLOC_BIT_SINGLE;
+			return t;
+		}
+	}
+	spin_unlock(&root->fs_info->restripe_lock);
+
 	if (num_devices == 1)
 		flags &= ~(BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_RAID0);
 	if (num_devices < 4)
@@ -2987,8 +3015,9 @@ u64 btrfs_reduce_alloc_profile(struct btrfs_root *root, u64 flags)
 	if ((flags & BTRFS_BLOCK_GROUP_RAID0) &&
 	    ((flags & BTRFS_BLOCK_GROUP_RAID1) |
 	     (flags & BTRFS_BLOCK_GROUP_RAID10) |
-	     (flags & BTRFS_BLOCK_GROUP_DUP)))
+	     (flags & BTRFS_BLOCK_GROUP_DUP))) {
 		flags &= ~BTRFS_BLOCK_GROUP_RAID0;
+	}
 
 	/* in-memory -> on-disk */
 	flags &= ~BTRFS_AVAIL_ALLOC_BIT_SINGLE;
@@ -6518,6 +6547,29 @@ static u64 update_block_group_flags(struct btrfs_root *root, u64 flags)
 	u64 num_devices;
 	u64 stripped = BTRFS_BLOCK_GROUP_RAID0 |
 		BTRFS_BLOCK_GROUP_RAID1 | BTRFS_BLOCK_GROUP_RAID10;
+
+	if (root->fs_info->restripe_ctl) {
+		struct restripe_control *rctl = root->fs_info->restripe_ctl;
+		u64 t = 0;
+
+		/* pick restriper's target profile and return */
+		if (flags & BTRFS_BLOCK_GROUP_DATA &&
+		    rctl->data.flags & BTRFS_RESTRIPE_ARGS_CONVERT) {
+			t = BTRFS_BLOCK_GROUP_DATA | rctl->data.target;
+		} else if (flags & BTRFS_BLOCK_GROUP_SYSTEM &&
+			   rctl->sys.flags & BTRFS_RESTRIPE_ARGS_CONVERT) {
+			t = BTRFS_BLOCK_GROUP_SYSTEM | rctl->sys.target;
+		} else if (flags & BTRFS_BLOCK_GROUP_METADATA &&
+			   rctl->meta.flags & BTRFS_RESTRIPE_ARGS_CONVERT) {
+			t = BTRFS_BLOCK_GROUP_METADATA | rctl->meta.target;
+		}
+
+		if (t) {
+			/* in-memory -> on-disk */
+			t &= ~BTRFS_AVAIL_ALLOC_BIT_SINGLE;
+			return t;
+		}
+	}
 
 	/*
 	 * we add in the count of missing devices because we want
