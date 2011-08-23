@@ -2175,6 +2175,26 @@ static void unset_restripe_control(struct btrfs_fs_info *fs_info)
 	kfree(rctl);
 }
 
+/*
+ * Restripe filters.  Return 1 if chunk should be 'filtered out',
+ * ie should not be restriped.
+ */
+static int chunk_soft_convert_filter(u64 chunk_profile,
+				     struct btrfs_restripe_args *rargs)
+{
+	BUG_ON(!(rargs->flags & BTRFS_RESTRIPE_ARGS_CONVERT));
+
+	chunk_profile &= BTRFS_BLOCK_GROUP_PROFILE_MASK;
+
+	if (chunk_profile == 0)
+		chunk_profile = BTRFS_AVAIL_ALLOC_BIT_SINGLE;
+
+	if (rargs->target & chunk_profile)
+		return 1;
+
+	return 0;
+}
+
 static int should_restripe_chunk(struct btrfs_root *root,
 				 struct extent_buffer *leaf,
 				 struct btrfs_chunk *chunk, u64 chunk_offset)
@@ -2195,6 +2215,12 @@ static int should_restripe_chunk(struct btrfs_root *root,
 		rargs = &rctl->sys;
 	else if (chunk_type & BTRFS_BLOCK_GROUP_METADATA)
 		rargs = &rctl->meta;
+
+	/* soft profile changing mode */
+	if ((rargs->flags & BTRFS_RESTRIPE_ARGS_SOFT) &&
+	    chunk_soft_convert_filter(chunk_type, rargs)) {
+		return 0;
+	}
 
 	return 1;
 }
