@@ -1703,6 +1703,8 @@ struct btrfs_root *open_ctree(struct super_block *sb,
 	spin_lock_init(&fs_info->restripe_lock);
 	mutex_init(&fs_info->restripe_mutex);
 	fs_info->restripe_ctl = NULL;
+	fs_info->restripe_state = 0;
+	init_waitqueue_head(&fs_info->restripe_wait);
 
 	sb->s_blocksize = 4096;
 	sb->s_blocksize_bits = blksize_bits(4096);

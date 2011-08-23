@@ -109,6 +109,8 @@ struct btrfs_ioctl_fs_info_args {
 	__u64 reserved[124];			/* pad to 1k */
 };
 
+#define BTRFS_RESTRIPE_CTL_CANCEL	1
+
 struct btrfs_restripe_args {
 	__u64 profiles;
 	__u64 usage;
@@ -285,4 +287,5 @@ struct btrfs_ioctl_space_args {
 			       struct btrfs_ioctl_fs_info_args)
 #define BTRFS_IOC_RESTRIPE _IOW(BTRFS_IOCTL_MAGIC, 32, \
 				struct btrfs_ioctl_restripe_args)
+#define BTRFS_IOC_RESTRIPE_CTL _IOW(BTRFS_IOCTL_MAGIC, 33, int)
 #endif

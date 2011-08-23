@@ -2878,6 +2878,10 @@ static long btrfs_ioctl_restripe(struct btrfs_root *root, void __user *arg)
 		return -EROFS;
 
 	mutex_lock(&fs_info->restripe_mutex);
+	if (fs_info->restripe_ctl) {
+		ret = -EINPROGRESS;
+		goto out;
+	}
 
 	rargs = memdup_user(arg, sizeof(*rargs));
 	if (IS_ERR(rargs)) {
@@ -2906,6 +2910,20 @@ static long btrfs_ioctl_restripe(struct btrfs_root *root, void __user *arg)
 out:
 	mutex_unlock(&fs_info->restripe_mutex);
 	return ret;
+}
+
+static long btrfs_ioctl_restripe_ctl(struct btrfs_root *root,
+				     int cmd)
+{
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	switch (cmd) {
+	case BTRFS_RESTRIPE_CTL_CANCEL:
+		return btrfs_cancel_restripe(root->fs_info);
+	}
+
+	return -EINVAL;
 }
 
 long btrfs_ioctl(struct file *file, unsigned int
@@ -2982,6 +3000,8 @@ long btrfs_ioctl(struct file *file, unsigned int
 		return btrfs_ioctl_scrub_progress(root, argp);
 	case BTRFS_IOC_RESTRIPE:
 		return btrfs_ioctl_restripe(root, argp);
+	case BTRFS_IOC_RESTRIPE_CTL:
+		return btrfs_ioctl_restripe_ctl(root, arg);
 	}
 
 	return -ENOTTY;

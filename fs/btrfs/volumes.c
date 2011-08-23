@@ -2553,6 +2553,13 @@ static int __btrfs_restripe(struct btrfs_root *dev_root)
 	key.type = BTRFS_CHUNK_ITEM_KEY;
 
 	while (1) {
+		struct btrfs_fs_info *fs_info = dev_root->fs_info;
+
+		if (test_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state)) {
+			ret = -ECANCELED;
+			goto error;
+		}
+
 		ret = btrfs_search_slot(NULL, chunk_root, &key, path, 0, 0);
 		if (ret < 0)
 			goto error;
@@ -2715,16 +2722,25 @@ do_restripe:
 	set_restripe_control(rctl, resume);
 	mutex_unlock(&fs_info->volume_mutex);
 
+	set_bit(RESTRIPE_RUNNING, &fs_info->restripe_state);
+	mutex_unlock(&fs_info->restripe_mutex);
+
 	err = __btrfs_restripe(fs_info->dev_root);
 
-	mutex_lock(&fs_info->volume_mutex);
+	mutex_lock(&fs_info->restripe_mutex);
+	clear_bit(RESTRIPE_RUNNING, &fs_info->restripe_state);
 
-	unset_restripe_control(fs_info);
-	ret = del_restripe_item(fs_info->tree_root);
-	BUG_ON(ret);
+	if (test_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state)) {
+		mutex_lock(&fs_info->volume_mutex);
 
-	mutex_unlock(&fs_info->volume_mutex);
+		unset_restripe_control(fs_info);
+		ret = del_restripe_item(fs_info->tree_root);
+		BUG_ON(ret);
 
+		mutex_unlock(&fs_info->volume_mutex);
+	}
+
+	wake_up(&fs_info->restripe_wait);
 	return err;
 
 out:
@@ -2804,6 +2820,41 @@ out_free:
 	kfree(rctl);
 out:
 	btrfs_free_path(path);
+	return ret;
+}
+
+int btrfs_cancel_restripe(struct btrfs_fs_info *fs_info)
+{
+	int ret = 0;
+
+	mutex_lock(&fs_info->restripe_mutex);
+	if (!fs_info->restripe_ctl) {
+		ret = -ENOTCONN;
+		goto out;
+	}
+
+	if (test_bit(RESTRIPE_RUNNING, &fs_info->restripe_state)) {
+		set_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state);
+		while (test_bit(RESTRIPE_RUNNING, &fs_info->restripe_state)) {
+			mutex_unlock(&fs_info->restripe_mutex);
+			wait_event(fs_info->restripe_wait,
+				   !test_bit(RESTRIPE_RUNNING,
+					     &fs_info->restripe_state));
+			mutex_lock(&fs_info->restripe_mutex);
+		}
+		clear_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state);
+	} else {
+		mutex_lock(&fs_info->volume_mutex);
+
+		unset_restripe_control(fs_info);
+		ret = del_restripe_item(fs_info->tree_root);
+		BUG_ON(ret);
+
+		mutex_unlock(&fs_info->volume_mutex);
+	}
+
+out:
+	mutex_unlock(&fs_info->restripe_mutex);
 	return ret;
 }
 
