@@ -258,7 +258,6 @@ struct btrfs_device *btrfs_find_device(struct btrfs_root *root, u64 devid,
 				       u8 *uuid, u8 *fsid);
 int btrfs_shrink_device(struct btrfs_device *device, u64 new_size);
 int btrfs_init_new_device(struct btrfs_root *root, char *path);
-int btrfs_balance(struct btrfs_root *dev_root);
 int btrfs_restripe(struct restripe_control *rctl, int resume);
 int btrfs_recover_restripe(struct btrfs_root *tree_root);
 int btrfs_cancel_restripe(struct btrfs_fs_info *fs_info);

@@ -2864,6 +2864,42 @@ static long btrfs_ioctl_scrub_progress(struct btrfs_root *root,
 	return ret;
 }
 
+static long btrfs_ioctl_balance(struct btrfs_root *root)
+{
+	struct btrfs_fs_info *fs_info = root->fs_info;
+	struct restripe_control *rctl;
+	int ret;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	if (fs_info->sb->s_flags & MS_RDONLY)
+		return -EROFS;
+
+	mutex_lock(&fs_info->restripe_mutex);
+	if (fs_info->restripe_ctl) {
+		ret = -EINPROGRESS;
+		goto out;
+	}
+
+	rctl = kzalloc(sizeof(*rctl), GFP_NOFS);
+	if (!rctl) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	rctl->fs_info = fs_info;
+	/* relocate everything - no filters */
+	rctl->flags |= BTRFS_RESTRIPE_TYPE_MASK;
+
+	ret = btrfs_restripe(rctl, 0);
+
+	/* rctl freed in unset_restripe_control */
+out:
+	mutex_unlock(&fs_info->restripe_mutex);
+	return ret;
+}
+
 static long btrfs_ioctl_restripe(struct btrfs_root *root, void __user *arg)
 {
 	struct btrfs_ioctl_restripe_args *rargs;
@@ -2974,7 +3010,7 @@ long btrfs_ioctl(struct file *file, unsigned int
 	case BTRFS_IOC_DEV_INFO:
 		return btrfs_ioctl_dev_info(root, argp);
 	case BTRFS_IOC_BALANCE:
-		return btrfs_balance(root->fs_info->dev_root);
+		return btrfs_ioctl_balance(root);
 	case BTRFS_IOC_CLONE:
 		return btrfs_ioctl_clone(file, arg, 0, 0, 0);
 	case BTRFS_IOC_CLONE_RANGE:
