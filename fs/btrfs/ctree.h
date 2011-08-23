@@ -85,6 +85,9 @@ struct btrfs_ordered_sum;
 /* holds checksums of all the data extents */
 #define BTRFS_CSUM_TREE_OBJECTID 7ULL
 
+/* for storing restripe params in the root tree */
+#define BTRFS_RESTRIPE_OBJECTID -4ULL
+
 /* orhpan objectid for tracking unlinked/truncated files */
 #define BTRFS_ORPHAN_OBJECTID -5ULL
 
@@ -649,6 +652,47 @@ struct btrfs_root_ref {
 	__le16 name_len;
 } __attribute__ ((__packed__));
 
+/*
+ * Restriper stuff
+ */
+struct btrfs_disk_restripe_args {
+	/* profiles to touch, in-memory format */
+	__le64 profiles;
+
+	/* usage filter */
+	__le64 usage;
+
+	/* devid filter */
+	__le64 devid;
+
+	/* devid subset filter [pstart..pend) */
+	__le64 pstart;
+	__le64 pend;
+
+	/* btrfs virtual address space subset filter [vstart..vend) */
+	__le64 vstart;
+	__le64 vend;
+
+	/* profile to convert to, in-memory format */
+	__le64 target;
+
+	/* BTRFS_RESTRIPE_ARGS_* */
+	__le64 flags;
+
+	__le64 unused[8];
+} __attribute__ ((__packed__));
+
+struct btrfs_restripe_item {
+	/* BTRFS_RESTRIPE_* */
+	__le64 flags;
+
+	struct btrfs_disk_restripe_args data;
+	struct btrfs_disk_restripe_args sys;
+	struct btrfs_disk_restripe_args meta;
+
+	__le64 unused[4];
+} __attribute__ ((__packed__));
+
 #define BTRFS_FILE_EXTENT_INLINE 0
 #define BTRFS_FILE_EXTENT_REG 1
 #define BTRFS_FILE_EXTENT_PREALLOC 2
@@ -727,7 +771,8 @@ struct btrfs_csum_item {
 					 BTRFS_BLOCK_GROUP_RAID10)
 /*
  * We need a bit for restriper to be able to tell when chunks of type
- * SINGLE are available.  It is used in avail_*_alloc_bits.
+ * SINGLE are available.  It is used in avail_*_alloc_bits and restripe
+ * item fields.
  */
 #define BTRFS_AVAIL_ALLOC_BIT_SINGLE (1 << 7)
 
@@ -2000,8 +2045,86 @@ static inline bool btrfs_root_readonly(struct btrfs_root *root)
 	return root->root_item.flags & BTRFS_ROOT_SUBVOL_RDONLY;
 }
 
-/* struct btrfs_super_block */
+/* struct btrfs_restripe_item */
+BTRFS_SETGET_FUNCS(restripe_flags, struct btrfs_restripe_item, flags, 64);
 
+static inline void btrfs_restripe_data(struct extent_buffer *eb,
+				       struct btrfs_restripe_item *ri,
+				       struct btrfs_disk_restripe_args *ra)
+{
+	read_eb_member(eb, ri, struct btrfs_restripe_item, data, ra);
+}
+
+static inline void btrfs_set_restripe_data(struct extent_buffer *eb,
+					   struct btrfs_restripe_item *ri,
+					   struct btrfs_disk_restripe_args *ra)
+{
+	write_eb_member(eb, ri, struct btrfs_restripe_item, data, ra);
+}
+
+static inline void btrfs_restripe_meta(struct extent_buffer *eb,
+				       struct btrfs_restripe_item *ri,
+				       struct btrfs_disk_restripe_args *ra)
+{
+	read_eb_member(eb, ri, struct btrfs_restripe_item, meta, ra);
+}
+
+static inline void btrfs_set_restripe_meta(struct extent_buffer *eb,
+					   struct btrfs_restripe_item *ri,
+					   struct btrfs_disk_restripe_args *ra)
+{
+	write_eb_member(eb, ri, struct btrfs_restripe_item, meta, ra);
+}
+
+static inline void btrfs_restripe_sys(struct extent_buffer *eb,
+				      struct btrfs_restripe_item *ri,
+				      struct btrfs_disk_restripe_args *ra)
+{
+	read_eb_member(eb, ri, struct btrfs_restripe_item, sys, ra);
+}
+
+static inline void btrfs_set_restripe_sys(struct extent_buffer *eb,
+					  struct btrfs_restripe_item *ri,
+					  struct btrfs_disk_restripe_args *ra)
+{
+	write_eb_member(eb, ri, struct btrfs_restripe_item, sys, ra);
+}
+
+static inline void
+btrfs_disk_restripe_args_to_cpu(struct btrfs_restripe_args *cpu,
+				struct btrfs_disk_restripe_args *disk)
+{
+	memset(cpu, 0, sizeof(*cpu));
+
+	cpu->profiles = le64_to_cpu(disk->profiles);
+	cpu->usage = le64_to_cpu(disk->usage);
+	cpu->devid = le64_to_cpu(disk->devid);
+	cpu->pstart = le64_to_cpu(disk->pstart);
+	cpu->pend = le64_to_cpu(disk->pend);
+	cpu->vstart = le64_to_cpu(disk->vstart);
+	cpu->vend = le64_to_cpu(disk->vend);
+	cpu->target = le64_to_cpu(disk->target);
+	cpu->flags = le64_to_cpu(disk->flags);
+}
+
+static inline void
+btrfs_cpu_restripe_args_to_disk(struct btrfs_disk_restripe_args *disk,
+				struct btrfs_restripe_args *cpu)
+{
+	memset(disk, 0, sizeof(*disk));
+
+	disk->profiles = cpu_to_le64(cpu->profiles);
+	disk->usage = cpu_to_le64(cpu->usage);
+	disk->devid = cpu_to_le64(cpu->devid);
+	disk->pstart = cpu_to_le64(cpu->pstart);
+	disk->pend = cpu_to_le64(cpu->pend);
+	disk->vstart = cpu_to_le64(cpu->vstart);
+	disk->vend = cpu_to_le64(cpu->vend);
+	disk->target = cpu_to_le64(cpu->target);
+	disk->flags = cpu_to_le64(cpu->flags);
+}
+
+/* struct btrfs_super_block */
 BTRFS_SETGET_STACK_FUNCS(super_bytenr, struct btrfs_super_block, bytenr, 64);
 BTRFS_SETGET_STACK_FUNCS(super_flags, struct btrfs_super_block, flags, 64);
 BTRFS_SETGET_STACK_FUNCS(super_generation, struct btrfs_super_block,

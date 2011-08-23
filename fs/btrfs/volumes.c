@@ -2150,6 +2150,97 @@ error:
 	return ret;
 }
 
+static int insert_restripe_item(struct btrfs_root *root,
+				struct restripe_control *rctl)
+{
+	struct btrfs_trans_handle *trans;
+	struct btrfs_restripe_item *item;
+	struct btrfs_disk_restripe_args disk_rargs;
+	struct btrfs_path *path;
+	struct extent_buffer *leaf;
+	struct btrfs_key key;
+	int ret, err;
+
+	path = btrfs_alloc_path();
+	if (!path)
+		return -ENOMEM;
+
+	trans = btrfs_start_transaction(root, 0);
+	if (IS_ERR(trans)) {
+		btrfs_free_path(path);
+		return PTR_ERR(trans);
+	}
+
+	key.objectid = BTRFS_RESTRIPE_OBJECTID;
+	key.type = 0;
+	key.offset = 0;
+
+	ret = btrfs_insert_empty_item(trans, root, path, &key,
+				      sizeof(*item));
+	if (ret)
+		goto out;
+
+	leaf = path->nodes[0];
+	item = btrfs_item_ptr(leaf, path->slots[0], struct btrfs_restripe_item);
+
+	memset_extent_buffer(leaf, 0, (unsigned long)item, sizeof(*item));
+
+	btrfs_cpu_restripe_args_to_disk(&disk_rargs, &rctl->data);
+	btrfs_set_restripe_data(leaf, item, &disk_rargs);
+	btrfs_cpu_restripe_args_to_disk(&disk_rargs, &rctl->meta);
+	btrfs_set_restripe_meta(leaf, item, &disk_rargs);
+	btrfs_cpu_restripe_args_to_disk(&disk_rargs, &rctl->sys);
+	btrfs_set_restripe_sys(leaf, item, &disk_rargs);
+
+	btrfs_set_restripe_flags(leaf, item, rctl->flags);
+
+	btrfs_mark_buffer_dirty(leaf);
+out:
+	btrfs_free_path(path);
+	err = btrfs_commit_transaction(trans, root);
+	if (err && !ret)
+		ret = err;
+	return ret;
+}
+
+static int del_restripe_item(struct btrfs_root *root)
+{
+	struct btrfs_trans_handle *trans;
+	struct btrfs_path *path;
+	struct btrfs_key key;
+	int ret, err;
+
+	path = btrfs_alloc_path();
+	if (!path)
+		return -ENOMEM;
+
+	trans = btrfs_start_transaction(root, 0);
+	if (IS_ERR(trans)) {
+		btrfs_free_path(path);
+		return PTR_ERR(trans);
+	}
+
+	key.objectid = BTRFS_RESTRIPE_OBJECTID;
+	key.type = 0;
+	key.offset = 0;
+
+	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	if (ret < 0)
+		goto out;
+	if (ret > 0) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	ret = btrfs_del_item(trans, root, path);
+out:
+	btrfs_free_path(path);
+	err = btrfs_commit_transaction(trans, root);
+	if (err && !ret)
+		ret = err;
+	return ret;
+}
+
 /*
  * Should be called with both restripe and volume mutexes held to
  * serialize other volume operations (add_dev/rm_dev/resize) wrt
@@ -2485,6 +2576,7 @@ int btrfs_restripe(struct restripe_control *rctl)
 {
 	struct btrfs_fs_info *fs_info = rctl->fs_info;
 	u64 allowed;
+	int err;
 	int ret;
 
 	mutex_lock(&fs_info->volume_mutex);
@@ -2572,16 +2664,25 @@ int btrfs_restripe(struct restripe_control *rctl)
 	}
 
 do_restripe:
+	ret = insert_restripe_item(fs_info->tree_root, rctl);
+	if (ret && ret != -EEXIST)
+		goto out;
+	BUG_ON(ret == -EEXIST);
+
 	set_restripe_control(rctl);
 	mutex_unlock(&fs_info->volume_mutex);
 
-	ret = __btrfs_restripe(fs_info->dev_root);
+	err = __btrfs_restripe(fs_info->dev_root);
 
 	mutex_lock(&fs_info->volume_mutex);
+
 	unset_restripe_control(fs_info);
+	ret = del_restripe_item(fs_info->tree_root);
+	BUG_ON(ret);
+
 	mutex_unlock(&fs_info->volume_mutex);
 
-	return ret;
+	return err;
 
 out:
 	mutex_unlock(&fs_info->volume_mutex);
