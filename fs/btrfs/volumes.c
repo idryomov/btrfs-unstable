@@ -2220,6 +2220,23 @@ static int chunk_usage_filter(struct btrfs_fs_info *fs_info, u64 chunk_offset,
 	return ret;
 }
 
+static int chunk_devid_filter(struct extent_buffer *leaf,
+			      struct btrfs_chunk *chunk,
+			      struct btrfs_restripe_args *rargs)
+{
+	struct btrfs_stripe *stripe;
+	int num_stripes = btrfs_chunk_num_stripes(leaf, chunk);
+	int i;
+
+	for (i = 0; i < num_stripes; i++) {
+		stripe = btrfs_stripe_nr(chunk, i);
+		if (btrfs_stripe_devid(leaf, stripe) == rargs->devid)
+			return 0;
+	}
+
+	return 1;
+}
+
 static int chunk_soft_convert_filter(u64 chunk_profile,
 				     struct btrfs_restripe_args *rargs)
 {
@@ -2266,6 +2283,12 @@ static int should_restripe_chunk(struct btrfs_root *root,
 	/* usage filter */
 	if ((rargs->flags & BTRFS_RESTRIPE_ARGS_USAGE) &&
 	    chunk_usage_filter(rctl->fs_info, chunk_offset, rargs)) {
+		return 0;
+	}
+
+	/* devid filter */
+	if ((rargs->flags & BTRFS_RESTRIPE_ARGS_DEVID) &&
+	    chunk_devid_filter(leaf, chunk, rargs)) {
 		return 0;
 	}
 
