@@ -204,6 +204,7 @@ struct map_lookup {
  */
 #define RESTRIPE_RUNNING	0
 #define RESTRIPE_CANCEL_REQ	1
+#define RESTRIPE_PAUSE_REQ	2
 
 struct btrfs_restripe_args;
 struct restripe_control {
@@ -261,6 +262,7 @@ int btrfs_balance(struct btrfs_root *dev_root);
 int btrfs_restripe(struct restripe_control *rctl, int resume);
 int btrfs_recover_restripe(struct btrfs_root *tree_root);
 int btrfs_cancel_restripe(struct btrfs_fs_info *fs_info);
+int btrfs_pause_restripe(struct btrfs_fs_info *fs_info, int unset);
 int btrfs_chunk_readonly(struct btrfs_root *root, u64 chunk_offset);
 int find_free_dev_extent(struct btrfs_trans_handle *trans,
 			 struct btrfs_device *device, u64 num_bytes,

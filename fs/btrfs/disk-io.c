@@ -2542,6 +2542,9 @@ int close_ctree(struct btrfs_root *root)
 	fs_info->closing = 1;
 	smp_mb();
 
+	/* pause restriper and free restripe_ctl */
+	btrfs_pause_restripe(root->fs_info, 1);
+
 	btrfs_scrub_cancel(root);
 
 	/* wait for any defraggers to finish */

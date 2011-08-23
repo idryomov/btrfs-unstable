@@ -2555,7 +2555,8 @@ static int __btrfs_restripe(struct btrfs_root *dev_root)
 	while (1) {
 		struct btrfs_fs_info *fs_info = dev_root->fs_info;
 
-		if (test_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state)) {
+		if (test_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state) ||
+		    test_bit(RESTRIPE_PAUSE_REQ, &fs_info->restripe_state)) {
 			ret = -ECANCELED;
 			goto error;
 		}
@@ -2730,7 +2731,9 @@ do_restripe:
 	mutex_lock(&fs_info->restripe_mutex);
 	clear_bit(RESTRIPE_RUNNING, &fs_info->restripe_state);
 
-	if (test_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state)) {
+	if (test_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state) ||
+	    (!test_bit(RESTRIPE_PAUSE_REQ, &fs_info->restripe_state) &&
+	     !test_bit(RESTRIPE_CANCEL_REQ, &fs_info->restripe_state))) {
 		mutex_lock(&fs_info->volume_mutex);
 
 		unset_restripe_control(fs_info);
@@ -2853,6 +2856,43 @@ int btrfs_cancel_restripe(struct btrfs_fs_info *fs_info)
 		mutex_unlock(&fs_info->volume_mutex);
 	}
 
+out:
+	mutex_unlock(&fs_info->restripe_mutex);
+	return ret;
+}
+
+int btrfs_pause_restripe(struct btrfs_fs_info *fs_info, int unset)
+{
+	int ret = 0;
+
+	mutex_lock(&fs_info->restripe_mutex);
+	if (!fs_info->restripe_ctl) {
+		ret = -ENOTCONN;
+		goto out;
+	}
+
+	/* only running restripe can be paused */
+	if (!test_bit(RESTRIPE_RUNNING, &fs_info->restripe_state)) {
+		ret = -ENOTCONN;
+		goto out_unset;
+	}
+
+	set_bit(RESTRIPE_PAUSE_REQ, &fs_info->restripe_state);
+	while (test_bit(RESTRIPE_RUNNING, &fs_info->restripe_state)) {
+		mutex_unlock(&fs_info->restripe_mutex);
+		wait_event(fs_info->restripe_wait,
+			   !test_bit(RESTRIPE_RUNNING,
+				     &fs_info->restripe_state));
+		mutex_lock(&fs_info->restripe_mutex);
+	}
+	clear_bit(RESTRIPE_PAUSE_REQ, &fs_info->restripe_state);
+
+out_unset:
+	if (unset) {
+		mutex_lock(&fs_info->volume_mutex);
+		unset_restripe_control(fs_info);
+		mutex_unlock(&fs_info->volume_mutex);
+	}
 out:
 	mutex_unlock(&fs_info->restripe_mutex);
 	return ret;
