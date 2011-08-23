@@ -168,6 +168,18 @@ struct map_lookup {
 #define map_lookup_size(n) (sizeof(struct map_lookup) + \
 			    (sizeof(struct btrfs_bio_stripe) * (n)))
 
+/*
+ * Restriper's general "type" filter.  Shares bits with chunk type for
+ * simplicity, RESTRIPE prefix is used to avoid confusion.
+ */
+#define BTRFS_RESTRIPE_DATA		(1ULL << 0)
+#define BTRFS_RESTRIPE_SYSTEM		(1ULL << 1)
+#define BTRFS_RESTRIPE_METADATA		(1ULL << 2)
+
+#define BTRFS_RESTRIPE_TYPE_MASK	(BTRFS_RESTRIPE_DATA |		    \
+					 BTRFS_RESTRIPE_SYSTEM |	    \
+					 BTRFS_RESTRIPE_METADATA)
+
 #define BTRFS_RESTRIPE_FORCE		(1ULL << 3)
 
 /*
