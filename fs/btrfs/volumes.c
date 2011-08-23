@@ -2756,13 +2756,24 @@ static int restriper_kthread(void *data)
 {
 	struct restripe_control *rctl = (struct restripe_control *)data;
 	struct btrfs_fs_info *fs_info = rctl->fs_info;
-	int ret;
+	int ret = 0;
 
 	mutex_lock(&fs_info->restripe_mutex);
 
-	printk(KERN_INFO "btrfs: continuing restripe\n");
+	if (btrfs_test_opt(fs_info->tree_root, SKIP_RESTRIPE)) {
+		mutex_lock(&fs_info->volume_mutex);
+		set_restripe_control(rctl, 0);
+		mutex_unlock(&fs_info->volume_mutex);
+
+		printk(KERN_INFO "btrfs: force skipping restripe\n");
+		goto out;
+	} else {
+		printk(KERN_INFO "btrfs: continuing restripe\n");
+	}
+
 	ret = btrfs_restripe(rctl, 1);
 
+out:
 	mutex_unlock(&fs_info->restripe_mutex);
 	return ret;
 }

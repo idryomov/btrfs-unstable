@@ -162,7 +162,7 @@ enum {
 	Opt_notreelog, Opt_ratio, Opt_flushoncommit, Opt_discard,
 	Opt_space_cache, Opt_clear_cache, Opt_user_subvol_rm_allowed,
 	Opt_enospc_debug, Opt_subvolrootid, Opt_defrag,
-	Opt_inode_cache, Opt_err,
+	Opt_inode_cache, Opt_skip_restripe, Opt_err,
 };
 
 static match_table_t tokens = {
@@ -195,6 +195,7 @@ static match_table_t tokens = {
 	{Opt_subvolrootid, "subvolrootid=%d"},
 	{Opt_defrag, "autodefrag"},
 	{Opt_inode_cache, "inode_cache"},
+	{Opt_skip_restripe, "skip_restripe"},
 	{Opt_err, NULL},
 };
 
@@ -380,6 +381,9 @@ int btrfs_parse_options(struct btrfs_root *root, char *options)
 		case Opt_defrag:
 			printk(KERN_INFO "btrfs: enabling auto defrag");
 			btrfs_set_opt(info->mount_opt, AUTO_DEFRAG);
+			break;
+		case Opt_skip_restripe:
+			btrfs_set_opt(info->mount_opt, SKIP_RESTRIPE);
 			break;
 		case Opt_err:
 			printk(KERN_INFO "btrfs: unrecognized mount option "
@@ -729,6 +733,8 @@ static int btrfs_show_options(struct seq_file *seq, struct vfsmount *vfs)
 		seq_puts(seq, ",autodefrag");
 	if (btrfs_test_opt(root, INODE_MAP_CACHE))
 		seq_puts(seq, ",inode_cache");
+	if (btrfs_test_opt(root, SKIP_RESTRIPE))
+		seq_puts(seq, ",skip_restripe");
 	return 0;
 }
 
