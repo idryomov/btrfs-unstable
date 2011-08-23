@@ -2923,6 +2923,8 @@ static long btrfs_ioctl_restripe_ctl(struct btrfs_root *root,
 		return btrfs_cancel_restripe(root->fs_info);
 	case BTRFS_RESTRIPE_CTL_PAUSE:
 		return btrfs_pause_restripe(root->fs_info, 0);
+	case BTRFS_RESTRIPE_CTL_RESUME:
+		return btrfs_resume_restripe(root->fs_info);
 	}
 
 	return -EINVAL;

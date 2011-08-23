@@ -263,6 +263,7 @@ int btrfs_restripe(struct restripe_control *rctl, int resume);
 int btrfs_recover_restripe(struct btrfs_root *tree_root);
 int btrfs_cancel_restripe(struct btrfs_fs_info *fs_info);
 int btrfs_pause_restripe(struct btrfs_fs_info *fs_info, int unset);
+int btrfs_resume_restripe(struct btrfs_fs_info *fs_info);
 int btrfs_chunk_readonly(struct btrfs_root *root, u64 chunk_offset);
 int find_free_dev_extent(struct btrfs_trans_handle *trans,
 			 struct btrfs_device *device, u64 num_bytes,

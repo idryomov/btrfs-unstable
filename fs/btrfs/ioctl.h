@@ -111,6 +111,7 @@ struct btrfs_ioctl_fs_info_args {
 
 #define BTRFS_RESTRIPE_CTL_CANCEL	1
 #define BTRFS_RESTRIPE_CTL_PAUSE	2
+#define BTRFS_RESTRIPE_CTL_RESUME	3
 
 struct btrfs_restripe_args {
 	__u64 profiles;

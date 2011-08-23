@@ -2898,6 +2898,31 @@ out:
 	return ret;
 }
 
+int btrfs_resume_restripe(struct btrfs_fs_info *fs_info)
+{
+	int ret;
+
+	if (fs_info->sb->s_flags & MS_RDONLY)
+		return -EROFS;
+
+	mutex_lock(&fs_info->restripe_mutex);
+	if (!fs_info->restripe_ctl) {
+		ret = -ENOTCONN;
+		goto out;
+	}
+
+	if (test_bit(RESTRIPE_RUNNING, &fs_info->restripe_state)) {
+		ret = -EINPROGRESS;
+		goto out;
+	}
+
+	ret = btrfs_restripe(fs_info->restripe_ctl, 1);
+
+out:
+	mutex_unlock(&fs_info->restripe_mutex);
+	return ret;
+}
+
 /*
  * shrinking a device means finding all of the device extents past
  * the new size, and then following the back refs to the chunks.
