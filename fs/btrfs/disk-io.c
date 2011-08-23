@@ -1997,9 +1997,6 @@ struct btrfs_root *open_ctree(struct super_block *sb,
 
 	fs_info->generation = generation;
 	fs_info->last_trans_committed = generation;
-	fs_info->data_alloc_profile = (u64)-1;
-	fs_info->metadata_alloc_profile = (u64)-1;
-	fs_info->system_alloc_profile = fs_info->metadata_alloc_profile;
 
 	ret = btrfs_init_space_info(fs_info);
 	if (ret) {
