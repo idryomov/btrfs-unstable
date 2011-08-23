@@ -1262,7 +1262,6 @@ int btrfs_rm_device(struct btrfs_root *root, char *device_path)
 	bool clear_super = false;
 
 	mutex_lock(&uuid_mutex);
-	mutex_lock(&root->fs_info->volume_mutex);
 
 	all_avail = root->fs_info->avail_data_alloc_bits |
 		root->fs_info->avail_system_alloc_bits |
@@ -1427,7 +1426,6 @@ error_close:
 	if (bdev)
 		blkdev_put(bdev, FMODE_READ | FMODE_EXCL);
 out:
-	mutex_unlock(&root->fs_info->volume_mutex);
 	mutex_unlock(&uuid_mutex);
 	return ret;
 error_undo:
@@ -1604,7 +1602,6 @@ int btrfs_init_new_device(struct btrfs_root *root, char *device_path)
 	}
 
 	filemap_write_and_wait(bdev->bd_inode->i_mapping);
-	mutex_lock(&root->fs_info->volume_mutex);
 
 	devices = &root->fs_info->fs_devices->devices;
 	/*
@@ -1728,8 +1725,7 @@ int btrfs_init_new_device(struct btrfs_root *root, char *device_path)
 		ret = btrfs_relocate_sys_chunks(root);
 		BUG_ON(ret);
 	}
-out:
-	mutex_unlock(&root->fs_info->volume_mutex);
+
 	return ret;
 error:
 	blkdev_put(bdev, FMODE_EXCL);
@@ -1737,7 +1733,7 @@ error:
 		mutex_unlock(&uuid_mutex);
 		up_write(&sb->s_umount);
 	}
-	goto out;
+	return ret;
 }
 
 static noinline int btrfs_update_device(struct btrfs_trans_handle *trans,
@@ -2151,6 +2147,217 @@ int btrfs_balance(struct btrfs_root *dev_root)
 error:
 	btrfs_free_path(path);
 	mutex_unlock(&dev_root->fs_info->volume_mutex);
+	return ret;
+}
+
+/*
+ * Should be called with both restripe and volume mutexes held to
+ * serialize other volume operations (add_dev/rm_dev/resize) wrt
+ * restriper.  Same goes for unset_restripe_control().
+ */
+static void set_restripe_control(struct restripe_control *rctl)
+{
+	struct btrfs_fs_info *fs_info = rctl->fs_info;
+
+	spin_lock(&fs_info->restripe_lock);
+	fs_info->restripe_ctl = rctl;
+	spin_unlock(&fs_info->restripe_lock);
+}
+
+static void unset_restripe_control(struct btrfs_fs_info *fs_info)
+{
+	struct restripe_control *rctl = fs_info->restripe_ctl;
+
+	spin_lock(&fs_info->restripe_lock);
+	fs_info->restripe_ctl = NULL;
+	spin_unlock(&fs_info->restripe_lock);
+
+	kfree(rctl);
+}
+
+static int __btrfs_restripe(struct btrfs_root *dev_root)
+{
+	struct list_head *devices;
+	struct btrfs_device *device;
+	u64 old_size;
+	u64 size_to_free;
+	struct btrfs_root *chunk_root = dev_root->fs_info->chunk_root;
+	struct btrfs_path *path;
+	struct btrfs_key key;
+	struct btrfs_key found_key;
+	struct btrfs_trans_handle *trans;
+	int ret;
+	int enospc_errors = 0;
+
+	/* step one make some room on all the devices */
+	devices = &dev_root->fs_info->fs_devices->devices;
+	list_for_each_entry(device, devices, dev_list) {
+		old_size = device->total_bytes;
+		size_to_free = div_factor(old_size, 1);
+		size_to_free = min(size_to_free, (u64)1 * 1024 * 1024);
+		if (!device->writeable ||
+		    device->total_bytes - device->bytes_used > size_to_free)
+			continue;
+
+		ret = btrfs_shrink_device(device, old_size - size_to_free);
+		if (ret == -ENOSPC)
+			break;
+		BUG_ON(ret);
+
+		trans = btrfs_start_transaction(dev_root, 0);
+		BUG_ON(IS_ERR(trans));
+
+		ret = btrfs_grow_device(trans, device, old_size);
+		BUG_ON(ret);
+
+		btrfs_end_transaction(trans, dev_root);
+	}
+
+	/* step two, relocate all the chunks */
+	path = btrfs_alloc_path();
+	if (!path) {
+		ret = -ENOMEM;
+		goto error;
+	}
+
+	key.objectid = BTRFS_FIRST_CHUNK_TREE_OBJECTID;
+	key.offset = (u64)-1;
+	key.type = BTRFS_CHUNK_ITEM_KEY;
+
+	while (1) {
+		ret = btrfs_search_slot(NULL, chunk_root, &key, path, 0, 0);
+		if (ret < 0)
+			goto error;
+
+		/*
+		 * this shouldn't happen, it means the last relocate
+		 * failed
+		 */
+		if (ret == 0)
+			BUG_ON(1); /* DIS - break ? */
+
+		ret = btrfs_previous_item(chunk_root, path, 0,
+					  BTRFS_CHUNK_ITEM_KEY);
+		if (ret)
+			BUG_ON(1); /* DIS - break ? */
+
+		btrfs_item_key_to_cpu(path->nodes[0], &found_key,
+				      path->slots[0]);
+		if (found_key.objectid != key.objectid)
+			break;
+
+		/* chunk zero is special */
+		if (found_key.offset == 0)
+			break;
+
+		btrfs_release_path(path);
+		ret = btrfs_relocate_chunk(chunk_root,
+					   chunk_root->root_key.objectid,
+					   found_key.objectid,
+					   found_key.offset);
+		if (ret && ret != -ENOSPC)
+			goto error;
+		if (ret == -ENOSPC)
+			enospc_errors++;
+		key.offset = found_key.offset - 1;
+	}
+
+error:
+	btrfs_free_path(path);
+	if (enospc_errors) {
+		printk(KERN_INFO "btrfs: restripe finished with %d enospc "
+		       "error(s)\n", enospc_errors);
+		ret = -ENOSPC;
+	}
+
+	return ret;
+}
+
+/*
+ * Should be called with restripe_mutex held
+ */
+int btrfs_restripe(struct restripe_control *rctl)
+{
+	struct btrfs_fs_info *fs_info = rctl->fs_info;
+	u64 allowed;
+	int ret;
+
+	mutex_lock(&fs_info->volume_mutex);
+
+	/*
+	 * Profile changing sanity checks
+	 */
+	allowed = BTRFS_AVAIL_ALLOC_BIT_SINGLE;
+	if (fs_info->fs_devices->num_devices == 1)
+		allowed |= BTRFS_BLOCK_GROUP_DUP;
+	else if (fs_info->fs_devices->num_devices < 4)
+		allowed |= (BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1);
+	else
+		allowed |= (BTRFS_BLOCK_GROUP_RAID0 | BTRFS_BLOCK_GROUP_RAID1 |
+				BTRFS_BLOCK_GROUP_RAID10);
+
+	if (rctl->data.target & ~allowed) {
+		printk(KERN_ERR "btrfs: unable to start restripe with target "
+		       "data profile %llu\n",
+		       (unsigned long long)rctl->data.target);
+		ret = -EINVAL;
+		goto out;
+	}
+	if (rctl->sys.target & ~allowed) {
+		printk(KERN_ERR "btrfs: unable to start restripe with target "
+		       "system profile %llu\n",
+		       (unsigned long long)rctl->sys.target);
+		ret = -EINVAL;
+		goto out;
+	}
+	if (rctl->meta.target & ~allowed) {
+		printk(KERN_ERR "btrfs: unable to start restripe with target "
+		       "metadata profile %llu\n",
+		       (unsigned long long)rctl->meta.target);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (rctl->data.target & BTRFS_BLOCK_GROUP_DUP) {
+		printk(KERN_ERR "btrfs: dup for data is not allowed\n");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* allow to reduce meta or sys integrity only if force set */
+	allowed = BTRFS_BLOCK_GROUP_DUP | BTRFS_BLOCK_GROUP_RAID1 |
+			BTRFS_BLOCK_GROUP_RAID10;
+	if (((rctl->sys.flags & BTRFS_RESTRIPE_ARGS_CONVERT) &&
+	     (fs_info->avail_system_alloc_bits & allowed) &&
+	     !(rctl->sys.target & allowed)) ||
+	    ((rctl->meta.flags & BTRFS_RESTRIPE_ARGS_CONVERT) &&
+	     (fs_info->avail_metadata_alloc_bits & allowed) &&
+	     !(rctl->meta.target & allowed))) {
+		if (rctl->flags & BTRFS_RESTRIPE_FORCE) {
+			printk(KERN_INFO "btrfs: force reducing metadata "
+			       "integrity\n");
+		} else {
+			printk(KERN_ERR "btrfs: can't reduce metadata "
+			       "integrity\n");
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+
+	set_restripe_control(rctl);
+	mutex_unlock(&fs_info->volume_mutex);
+
+	ret = __btrfs_restripe(fs_info->dev_root);
+
+	mutex_lock(&fs_info->volume_mutex);
+	unset_restripe_control(fs_info);
+	mutex_unlock(&fs_info->volume_mutex);
+
+	return ret;
+
+out:
+	mutex_unlock(&fs_info->volume_mutex);
+	kfree(rctl);
 	return ret;
 }
 

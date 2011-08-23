@@ -895,6 +895,7 @@ struct btrfs_block_group_cache {
 };
 
 struct reloc_control;
+struct restripe_control;
 struct btrfs_device;
 struct btrfs_fs_devices;
 struct btrfs_delayed_root;
@@ -1115,6 +1116,10 @@ struct btrfs_fs_info {
 	u64 avail_data_alloc_bits;
 	u64 avail_metadata_alloc_bits;
 	u64 avail_system_alloc_bits;
+
+	spinlock_t restripe_lock;
+	struct mutex restripe_mutex;
+	struct restripe_control *restripe_ctl;
 
 	unsigned data_chunk_allocations;
 	unsigned metadata_ratio;
