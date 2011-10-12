@@ -1165,6 +1165,8 @@ struct btrfs_fs_info {
 	spinlock_t restripe_lock;
 	struct mutex restripe_mutex;
 	struct restripe_control *restripe_ctl;
+	unsigned long restripe_state;
+	wait_queue_head_t restripe_wait;
 
 	unsigned data_chunk_allocations;
 	unsigned metadata_ratio;
