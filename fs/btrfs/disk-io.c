@@ -2419,6 +2419,10 @@ retry_root_backup:
 		if (!err)
 			err = btrfs_orphan_cleanup(fs_info->tree_root);
 		up_read(&fs_info->cleanup_work_sem);
+
+		if (!err)
+			err = btrfs_recover_restripe(fs_info->tree_root);
+
 		if (err) {
 			close_ctree(tree_root);
 			return ERR_PTR(err);
