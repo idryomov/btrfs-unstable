@@ -110,6 +110,7 @@ struct btrfs_ioctl_fs_info_args {
 };
 
 #define BTRFS_RESTRIPE_CTL_CANCEL	1
+#define BTRFS_RESTRIPE_CTL_PAUSE	2
 
 /*
  * this is packed, because it should have the same size as its
