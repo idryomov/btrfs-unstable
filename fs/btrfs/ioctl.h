@@ -318,6 +318,8 @@ struct btrfs_ioctl_logical_ino_args {
 #define BTRFS_IOC_RESTRIPE _IOW(BTRFS_IOCTL_MAGIC, 32, \
 				struct btrfs_ioctl_restripe_args)
 #define BTRFS_IOC_RESTRIPE_CTL _IOW(BTRFS_IOCTL_MAGIC, 33, int)
+#define BTRFS_IOC_RESTRIPE_PROGRESS _IOR(BTRFS_IOCTL_MAGIC, 34, \
+				struct btrfs_ioctl_restripe_args)
 #define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
 					struct btrfs_ioctl_ino_path_args)
 #define BTRFS_IOC_LOGICAL_INO _IOWR(BTRFS_IOCTL_MAGIC, 36, \
