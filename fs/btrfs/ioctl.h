@@ -109,6 +109,8 @@ struct btrfs_ioctl_fs_info_args {
 	__u64 reserved[124];			/* pad to 1k */
 };
 
+#define BTRFS_RESTRIPE_CTL_CANCEL	1
+
 /*
  * this is packed, because it should have the same size as its
  * disk-order counterpart (btrfs_disk_restripe_args)
@@ -313,6 +315,7 @@ struct btrfs_ioctl_logical_ino_args {
 			       struct btrfs_ioctl_fs_info_args)
 #define BTRFS_IOC_RESTRIPE _IOW(BTRFS_IOCTL_MAGIC, 32, \
 				struct btrfs_ioctl_restripe_args)
+#define BTRFS_IOC_RESTRIPE_CTL _IOW(BTRFS_IOCTL_MAGIC, 33, int)
 #define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
 					struct btrfs_ioctl_ino_path_args)
 #define BTRFS_IOC_LOGICAL_INO _IOWR(BTRFS_IOCTL_MAGIC, 36, \
