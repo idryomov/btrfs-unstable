@@ -198,6 +198,7 @@ struct map_lookup {
  * Restripe filters
  */
 #define BTRFS_RESTRIPE_ARGS_PROFILES	(1ULL << 0)
+#define BTRFS_RESTRIPE_ARGS_USAGE	(1ULL << 1)
 
 /*
  * Profile changing flags.  When SOFT is set we won't relocate chunk if
