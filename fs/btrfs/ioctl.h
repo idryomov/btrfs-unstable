@@ -109,6 +109,45 @@ struct btrfs_ioctl_fs_info_args {
 	__u64 reserved[124];			/* pad to 1k */
 };
 
+/*
+ * this is packed, because it should have the same size as its
+ * disk-order counterpart (btrfs_disk_restripe_args)
+ */
+struct btrfs_restripe_args {
+	__u64 profiles;
+	__u64 usage;
+	__u64 devid;
+	__u64 pstart;
+	__u64 pend;
+	__u64 vstart;
+	__u64 vend;
+
+	__u64 target;
+
+	__u64 flags;
+
+	__u64 unused[8];
+} __attribute__ ((__packed__));
+
+struct btrfs_restripe_progress {
+	__u64 expected;
+	__u64 considered;
+	__u64 completed;
+};
+
+struct btrfs_ioctl_restripe_args {
+	__u64 flags;
+	__u64 state;
+
+	struct btrfs_restripe_args data;
+	struct btrfs_restripe_args sys;
+	struct btrfs_restripe_args meta;
+
+	struct btrfs_restripe_progress stat;
+
+	__u64 unused[72]; /* pad to 1k */
+};
+
 #define BTRFS_INO_LOOKUP_PATH_MAX 4080
 struct btrfs_ioctl_ino_lookup_args {
 	__u64 treeid;
@@ -272,9 +311,10 @@ struct btrfs_ioctl_logical_ino_args {
 				 struct btrfs_ioctl_dev_info_args)
 #define BTRFS_IOC_FS_INFO _IOR(BTRFS_IOCTL_MAGIC, 31, \
 			       struct btrfs_ioctl_fs_info_args)
+#define BTRFS_IOC_RESTRIPE _IOW(BTRFS_IOCTL_MAGIC, 32, \
+				struct btrfs_ioctl_restripe_args)
 #define BTRFS_IOC_INO_PATHS _IOWR(BTRFS_IOCTL_MAGIC, 35, \
 					struct btrfs_ioctl_ino_path_args)
 #define BTRFS_IOC_LOGICAL_INO _IOWR(BTRFS_IOCTL_MAGIC, 36, \
 					struct btrfs_ioctl_ino_path_args)
-
 #endif
