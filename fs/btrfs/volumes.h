@@ -168,6 +168,23 @@ struct map_lookup {
 #define map_lookup_size(n) (sizeof(struct map_lookup) + \
 			    (sizeof(struct btrfs_bio_stripe) * (n)))
 
+#define BTRFS_RESTRIPE_FORCE		(1ULL << 3)
+
+/*
+ * Profile changing flags
+ */
+#define BTRFS_RESTRIPE_ARGS_CONVERT	(1ULL << 8)
+
+struct btrfs_restripe_args;
+struct restripe_control {
+	struct btrfs_fs_info *fs_info;
+	u64 flags;
+
+	struct btrfs_restripe_args data;
+	struct btrfs_restripe_args sys;
+	struct btrfs_restripe_args meta;
+};
+
 int btrfs_account_dev_extents_size(struct btrfs_device *device, u64 start,
 				   u64 end, u64 *length);
 
@@ -211,6 +228,7 @@ struct btrfs_device *btrfs_find_device(struct btrfs_root *root, u64 devid,
 int btrfs_shrink_device(struct btrfs_device *device, u64 new_size);
 int btrfs_init_new_device(struct btrfs_root *root, char *path);
 int btrfs_balance(struct btrfs_root *dev_root);
+int btrfs_restripe(struct restripe_control *rctl);
 int btrfs_chunk_readonly(struct btrfs_root *root, u64 chunk_offset);
 int find_free_dev_extent(struct btrfs_trans_handle *trans,
 			 struct btrfs_device *device, u64 num_bytes,
