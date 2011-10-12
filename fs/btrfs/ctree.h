@@ -725,6 +725,17 @@ struct btrfs_csum_item {
 					 BTRFS_BLOCK_GROUP_RAID1 |   \
 					 BTRFS_BLOCK_GROUP_DUP |     \
 					 BTRFS_BLOCK_GROUP_RAID10)
+/*
+ * We need a bit for restriper to be able to tell when chunks of type
+ * SINGLE are available.  It is used in avail_*_alloc_bits.
+ */
+#define BTRFS_AVAIL_ALLOC_BIT_SINGLE (1 << 7)
+
+/*
+ * To avoid troubles or remappings, reserve on-disk bit.
+ */
+#define BTRFS_BLOCK_GROUP_RESERVED   (1 << 7)
+
 struct btrfs_block_group_item {
 	__le64 used;
 	__le64 chunk_objectid;
@@ -1100,6 +1111,7 @@ struct btrfs_fs_info {
 	spinlock_t ref_cache_lock;
 	u64 total_ref_cache_size;
 
+	/* SINGLE has it's own bit for these three */
 	u64 avail_data_alloc_bits;
 	u64 avail_metadata_alloc_bits;
 	u64 avail_system_alloc_bits;
