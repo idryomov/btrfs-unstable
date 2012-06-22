@@ -2354,17 +2354,22 @@ retry_root_backup:
 				  BTRFS_CSUM_TREE_OBJECTID, csum_root);
 	if (ret)
 		goto recovery_tree_root;
-
 	csum_root->track_dirty = 1;
 
 	fs_info->generation = generation;
 	fs_info->last_trans_committed = generation;
 
+	ret = btrfs_recover_balance(fs_info);
+	if (ret) {
+		printk(KERN_WARNING "btrfs: failed to recover balance\n");
+		goto fail_tree_roots;
+	}
+
 	ret = btrfs_init_dev_stats(fs_info);
 	if (ret) {
 		printk(KERN_ERR "btrfs: failed to init dev_stats: %d\n",
 		       ret);
-		goto fail_block_groups;
+		goto fail_balance_ctl;
 	}
 
 	ret = btrfs_init_space_info(fs_info);
@@ -2492,9 +2497,6 @@ retry_root_backup:
 			err = btrfs_orphan_cleanup(fs_info->tree_root);
 		up_read(&fs_info->cleanup_work_sem);
 
-		if (!err)
-			err = btrfs_recover_balance(fs_info->tree_root);
-
 		if (err) {
 			close_ctree(tree_root);
 			return err;
@@ -2517,6 +2519,9 @@ fail_cleaner:
 
 fail_block_groups:
 	btrfs_free_block_groups(fs_info);
+
+fail_balance_ctl:
+	kfree(fs_info->balance_ctl);
 
 fail_tree_roots:
 	free_root_pointers(fs_info, 1);
