@@ -2362,14 +2362,14 @@ retry_root_backup:
 	ret = btrfs_recover_balance(fs_info);
 	if (ret) {
 		printk(KERN_WARNING "btrfs: failed to recover balance\n");
-		goto fail_tree_roots;
+		goto fail_block_groups;
 	}
 
 	ret = btrfs_init_dev_stats(fs_info);
 	if (ret) {
 		printk(KERN_ERR "btrfs: failed to init dev_stats: %d\n",
 		       ret);
-		goto fail_balance_ctl;
+		goto fail_block_groups;
 	}
 
 	ret = btrfs_init_space_info(fs_info);
@@ -2525,9 +2525,6 @@ fail_cleaner:
 
 fail_block_groups:
 	btrfs_free_block_groups(fs_info);
-
-fail_balance_ctl:
-	kfree(fs_info->balance_ctl);
 
 fail_tree_roots:
 	free_root_pointers(fs_info, 1);
