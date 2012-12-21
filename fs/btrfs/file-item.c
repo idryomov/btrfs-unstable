@@ -835,6 +835,13 @@ insert:
 	ret = btrfs_insert_empty_item(trans, root, path, &file_key,
 				      ins_size);
 	path->leave_spinning = 0;
+
+	/*
+	 * We can sometimes already have copied a csum into the log, that's ok
+	 * just overwrite it.
+	 */
+	if (root->objectid == BTRFS_TREE_LOG_OBJECTID && ret == -EEXIST)
+		ret = 0;
 	if (ret < 0)
 		goto fail_unlock;
 	if (ret != 0) {
