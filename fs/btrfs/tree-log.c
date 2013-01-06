@@ -3449,6 +3449,11 @@ unlocked:
 	csum_offset = mod_start - em->start;
 	csum_len = mod_len;
 
+	if (em->compress_type) {
+		csum_offset = 0;
+		csum_len = block_len;
+	}
+
 	/* block start is already adjusted for the file extent offset. */
 	ret = btrfs_lookup_csums_range(log->fs_info->csum_root,
 				       em->block_start + csum_offset,
